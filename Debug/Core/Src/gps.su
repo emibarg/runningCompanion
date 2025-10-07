@@ -1,0 +1,7 @@
+../Core/Src/gps.c:25:13:saveToBuffer	24	static
+../Core/Src/gps.c:42:12:gpsValidate	32	static
+../Core/Src/gps.c:64:6:gpsProcessByte	24	static
+../Core/Src/gps.c:85:13:gpsGetBuffer	4	static
+../Core/Src/gps.c:89:10:gpsGetBufferLength	4	static
+../Core/Src/gps.c:93:6:gpsClearBuffer	4	static
+../Core/Src/gps.c:97:5:gpsIsBufferFull	4	static
