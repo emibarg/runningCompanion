@@ -1,0 +1,4 @@
+../Core/Src/events.c:17:6:Events_Init	4	static
+../Core/Src/events.c:21:6:Events_Push	24	static
+../Core/Src/events.c:29:11:Events_Pop	16	static
+../Core/Src/events.c:36:9:Events_HasPending	4	static

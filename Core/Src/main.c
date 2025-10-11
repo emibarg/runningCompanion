@@ -24,10 +24,15 @@
 #include "usart.h"
 #include "gpio.h"
 
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "gps.h"
 #include "mpu6050.h"
+#include <string.h>
+#include "st7735.h"
+#include "GFX_FUNCTIONS.h"
+#include "fonts.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -102,21 +107,12 @@ int main(void)
   MX_SPI1_Init();
   MX_USART1_UART_Init();
   MX_FATFS_Init();
+  MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
-  HAL_Delay(500);
-  f_mount(&fs, "", 0);
-
-  //MPU
-  MPU6050_Initialization();
-  // Start receiving GPS bytes via interrupt
-  HAL_UART_Receive_IT(&huart1, &rxByte, 1);
 
 
+  systemState_Init();
 
-	f_open(&fil, "write.txt", FA_OPEN_ALWAYS | FA_WRITE | FA_READ);
-	f_lseek(&fil, fil.fsize);
-	f_puts("HOLA PROFE", &fil);
-	f_close(&fil);
 
   /* USER CODE END 2 */
 
@@ -125,18 +121,7 @@ int main(void)
   while (1)
   {
 
-	  //BUFFER DE GPS
-	  	  if(gpsIsBufferFull()){
-	  		f_open(&fil, "write.txt", FA_OPEN_ALWAYS | FA_WRITE | FA_READ);
-	  		f_lseek(&fil, fil.fsize);
-	  		f_puts(gpsGetBuffer(), &fil);
-	  		f_close(&fil);
-	  	  }
-	  //MPU
-		  if(MPU6050_DataReady() == 1)
-		  		{
-		  			MPU6050_ProcessData(&MPU6050);
-		  		}
+	systemState_Run();
 
 
     /* USER CODE END WHILE */

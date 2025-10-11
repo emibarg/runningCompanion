@@ -1,0 +1,4 @@
+../Core/Src/flags.c:5:6:Flags_Set	1
+../Core/Src/flags.c:9:6:Flags_Clear	1
+../Core/Src/flags.c:13:9:Flags_IsSet	1
+../Core/Src/flags.c:17:6:Flags_ClearAll	1

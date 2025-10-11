@@ -1,23 +1,22 @@
-/*
- * gps.h
- *
- *  Created on: Sep 2, 2025
- *      Author: emi
- */
-
 #ifndef INC_GPS_H_
 #define INC_GPS_H_
 
 #include "main.h"
+#include <stdbool.h>
 
-#define GPS_BUFFER_SIZE  1024   // total buffer for storing GPGGA lines
-#define GPS_LINE_MAX     128    // max length of a single NMEA line
+#define GPS_BUFFER_SIZE 1024
+#define GPS_LINE_MAX    128
 
 void gpsProcessByte(uint8_t byte);
 
-const char* gpsGetBuffer(void);
-uint16_t gpsGetBufferLength(void);
-void gpsClearBuffer(void);
-int gpsIsBufferFull(void);
+const char* gpsGetReadyBuffer(void);
+int gpsHasReadyBuffer(void);
+void gpsMarkBufferWritten(void);
 
-#endif /* INC_GPS_H_ */
+bool gpsIsReady(void);
+int gpsIsBufferFull(void);
+void gpsClearBuffer(void);
+void nmeaToDecimalDegreesString(const char* nmea, char dir, char* outStr);
+void gpsFormatBuffer(char *outBuffer, size_t outSize, const char *input);
+
+#endif
