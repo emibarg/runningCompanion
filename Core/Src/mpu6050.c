@@ -96,7 +96,7 @@ void MPU6050_Initialization(void)
 	//Interrupt PIN setting
 	uint8_t INT_LEVEL = 0x0; //0 - active high, 1 - active low
 	uint8_t LATCH_INT_EN = 0x0; //0 - INT 50us pulse, 1 - interrupt clear required
-	uint8_t INT_RD_CLEAR = 0x1; //0 - INT flag cleared by reading INT_STATUS, 1 - INT flag cleared by any read operation
+	uint8_t INT_RD_CLEAR = 0x0; //0 - INT flag cleared by reading INT_STATUS, 1 - INT flag cleared by any read operation
 	MPU6050_Writebyte(MPU6050_INT_PIN_CFG, (INT_LEVEL<<7)|(LATCH_INT_EN<<5)|(INT_RD_CLEAR<<4)); //
 	HAL_Delay(50);
 
@@ -176,32 +176,71 @@ void MPU6050_DataConvert(Struct_MPU6050* mpu6050)
 
 int MPU6050_DataReady(void)
 {
-	//old school way
-	/*
-	static uint8_t INT_STATE_FLAG = 0;
-	static uint8_t DATA_RDY_INT_FLAG = 0;
-	static uint8_t INT_PIN = 0;
-	INT_PIN = LL_GPIO_IsInputPinSet(MPU6050_INT_PORT, MPU6050_INT_PIN);
-	if(INT_PIN == 1)
-	{
-		MPU6050_Readbyte(MPU6050_INT_STATUS, &INT_STATE_FLAG); //flag cleared automatically within the sensor
-		DATA_RDY_INT_FLAG = INT_STATE_FLAG & 0x01;
-		if(DATA_RDY_INT_FLAG == 1)
-		{
-			INT_STATE_FLAG = 0; //flag clearing
-			DATA_RDY_INT_FLAG = 0;
-			INT_PIN = 0;
-			return 1;
-		}
-	}
-	return 0;
-	 */
-	return HAL_GPIO_ReadPin(MPU6050_INT_PORT, MPU6050_INT_PIN);
+    uint8_t status;
+    MPU6050_Readbyte(MPU6050_INT_STATUS, &status);
+    return (status & 0x01);
 }
+
 
 void MPU6050_ProcessData(Struct_MPU6050* mpu6050)
 {
 	MPU6050_Get6AxisRawData(mpu6050);
 	MPU6050_DataConvert(mpu6050);
+	StepDetector_Update(mpu6050);
 }
 
+
+
+// ====================== STEP DETECTION ====================== //
+
+static uint32_t stepCount = 0;
+static uint32_t lastStepTime = 0;
+
+// moving gravity baseline (squared)
+static int64_t gravitySq = 0;
+
+// step detection parameters (tweak as needed)
+#define STEP_THRESHOLD_DELTA  (700LL * 700LL)  // sensitivity
+#define STEP_MIN_INTERVAL_MS  250               // minimum time between steps
+#define GRAVITY_LPF_ALPHA     100               // baseline smoothing factor
+
+void StepDetector_Update(const Struct_MPU6050 *mpu)
+{
+    int32_t ax = mpu->acc_x;
+    int32_t ay = mpu->acc_y;
+    int32_t az = mpu->acc_z;
+
+    // magnitude squared (orientation-independent)
+    int64_t magSq = (int64_t)ax * ax + (int64_t)ay * ay + (int64_t)az * az;
+
+    // initialize gravity baseline at first call
+    if (gravitySq == 0) {
+        gravitySq = magSq;
+        return;
+    }
+
+    // compute deviation from baseline
+    int64_t delta = magSq > gravitySq ? magSq - gravitySq : gravitySq - magSq;
+
+    // step detection
+    uint32_t now = HAL_GetTick();
+    if (delta > STEP_THRESHOLD_DELTA && (now - lastStepTime) > STEP_MIN_INTERVAL_MS) {
+        stepCount++;
+        lastStepTime = now;
+    }
+
+    // update gravity baseline (simple low-pass filter)
+    gravitySq = (gravitySq * (GRAVITY_LPF_ALPHA - 1) + magSq) / GRAVITY_LPF_ALPHA;
+}
+
+uint32_t StepDetector_GetCount(void)
+{
+    return stepCount;
+}
+
+void StepDetector_Reset(void)
+{
+    stepCount = 0;
+    lastStepTime = 0;
+    gravitySq = 0;
+}

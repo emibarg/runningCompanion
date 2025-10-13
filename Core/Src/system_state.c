@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include "tim.h"
 
 // Globals for state management
 static SystemState_t currentState = STATE_INIT;
@@ -17,7 +18,44 @@ static bool mpuOK = false;
 //GPS
 char formattedBuffer[GPS_BUFFER_SIZE];
 
+//Stopwatch
+extern TIM_HandleTypeDef htim4;
+volatile uint32_t stopwatchSec = 0;
+static bool stopwatchRunning = false;
+static uint32_t lastDisplayedSec = 0;
 
+
+//MPU
+char stepsStr[20];
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance == TIM4) {
+        stopwatchSec++;  // increment every second
+    }
+}
+
+
+//BUTTON
+
+#define BTN_PORT GPIOB
+#define BTN_PIN  GPIO_PIN_9
+bool buttonPressed = false;
+static uint32_t lastButtonTime = 0;
+static GPIO_PinState lastButtonState = GPIO_PIN_SET;
+
+
+void checkButton(void) {
+    GPIO_PinState state = HAL_GPIO_ReadPin(BTN_PORT, BTN_PIN);
+
+    if (state == GPIO_PIN_RESET && lastButtonState == GPIO_PIN_SET) { // pressed
+        uint32_t now = HAL_GetTick();
+        if (now - lastButtonTime > 300) { // debounce 300ms
+            lastButtonTime = now;
+            buttonPressed = true;
+        }
+    }
+    lastButtonState = state;
+}
 
 void systemState_Init(void) {
 	//Delay for SD card
@@ -64,49 +102,82 @@ void systemState_Init(void) {
 
 
 void systemState_Run(void) {
+    // --- BUTTON HANDLING ---
+    checkButton();
+    if (buttonPressed) {
+        buttonPressed = false;
+
+        if (stopwatchRunning) {
+            // STOP: stop timer, go to idle
+            HAL_TIM_Base_Stop_IT(&htim4);
+            stopwatchRunning = false;
+            currentState = STATE_IDLE;
+
+            // show ready screen
+            ST7735_FillScreenFast(ST7735_BLACK);
+            ST7735_WriteString(0, 0, "Ready?", Font_11x18, ST7735_COLOR565(255, 0, 0), ST7735_BLACK);
+        } else {
+            // START: reset timer and start
+            stopwatchSec = 0;
+            HAL_TIM_Base_Start_IT(&htim4);
+            stopwatchRunning = true;
+            currentState = STATE_RUNNING;
+        }
+    }
+
+    // --- STATE MACHINE ---
     switch (currentState) {
+
     case STATE_INIT:
-    	//CHECKING IF ALL MODULES ARE CONNECTED and working
+        if (MPU6050_DataReady() && !mpuOK) {
+            mpuOK = true;
+            ST7735_FillRectangle(0, 50 + 15, 11 * 8, 18, ST7735_BLACK);
+            ST7735_WriteString(0, 50 + 15, "MPU: OK", Font_11x18, ST7735_WHITE, ST7735_BLACK);
+        }
 
-    	if (MPU6050_DataReady() == 1 && mpuOK == false) {
-    	    mpuOK = true;
+        if (gpsIsReady() && !gpsOK) {
+            gpsOK = true;
+            ST7735_FillRectangle(0, 30 + 15, 11 * 8, 18, ST7735_BLACK);
+            ST7735_WriteString(0, 30 + 15, "GPS: OK", Font_11x18, ST7735_WHITE, ST7735_BLACK);
+        }
 
-    	    // Clear the full area where the old text was drawn
-    	    ST7735_FillRectangle(0, 50 + 15, 11 * 8, 18, ST7735_BLACK);
-    	    // ^ Font_11x18 → width ≈ 11 px per char, height 18 px
-    	    // If "MPU: NOT OK" was drawn before, that’s about 11 chars * 8 = 88 px wide
+        if (gpsOK && sdOK && mpuOK) {
+            currentState = STATE_IDLE;
+            ST7735_FillScreenFast(ST7735_BLACK);
+            ST7735_WriteString(0, 0, "Ready?", Font_11x18, ST7735_COLOR565(255, 0, 0), ST7735_BLACK);
+        }
+        break;
 
-    	    // Now draw the new text
-    	    ST7735_WriteString(0, 50 + 15, "MPU: OK", Font_11x18, ST7735_WHITE, ST7735_BLACK);
-    	}
-
-    	if (gpsIsReady() == true && gpsOK == false){
-    		gpsOK =true;
-    		 ST7735_FillRectangle(0, 30 + 15, 11 * 8, 18, ST7735_BLACK);
-    		 ST7735_WriteString(0, 30 + 15, "GPS: OK", Font_11x18, ST7735_WHITE, ST7735_BLACK);
-
-    	}
-    	if(gpsOK && sdOK && mpuOK){
-          currentState = STATE_IDLE;
-          ST7735_FillScreenFast(ST7735_BLACK);
-
-    	}
-          break;
     case STATE_IDLE:
-
-    	currentState= STATE_RUNNING;
-    	break;
+        // nothing else to do while idle
+        break;
 
     case STATE_RUNNING:
-        // Every few ms, decide next action
+        // update stopwatch display
+        if (stopwatchSec != lastDisplayedSec) {
+            lastDisplayedSec = stopwatchSec;
+            char timeStr[16];
+            uint32_t s = stopwatchSec % 60;
+            uint32_t m = (stopwatchSec / 60) % 60;
+            uint32_t h = stopwatchSec / 3600;
+            snprintf(timeStr, sizeof(timeStr), "%02lu:%02lu:%02lu", h, m, s);
+
+            ST7735_FillRectangle(0, 0, 128, 18, ST7735_BLACK);
+            ST7735_WriteString(0, 0, timeStr, Font_11x18, ST7735_WHITE, ST7735_BLACK);
+        }
+
+        // update steps
+        snprintf(stepsStr, sizeof(stepsStr), "Steps: %lu", StepDetector_GetCount());
+        ST7735_FillRectangle(0, 20, 128, 10, ST7735_BLACK);
+        ST7735_WriteString(0, 20, stepsStr, Font_7x10, ST7735_WHITE, ST7735_BLACK);
+
+        // sensor reads
         if (HAL_GetTick() - lastActionTime >= 10) {
             if (MPU6050_DataReady()) {
                 currentState = STATE_MPU_READ;
-            }
-            else if (gpsHasReadyBuffer()) {
+            } else if (gpsHasReadyBuffer()) {
                 currentState = STATE_SD_WRITE;
-            }
-            else {
+            } else {
                 currentState = STATE_GPS_PROCESS;
             }
             lastActionTime = HAL_GetTick();
@@ -114,39 +185,41 @@ void systemState_Run(void) {
         break;
 
     case STATE_MPU_READ:
-        MPU6050_ProcessData(&MPU6050);
-        currentState = STATE_IDLE;
+        if (stopwatchRunning) {
+            MPU6050_ProcessData(&MPU6050);
+        }
+        currentState = stopwatchRunning ? STATE_RUNNING : STATE_IDLE;
         break;
 
     case STATE_GPS_PROCESS:
-        // Nothing blocking here — handled via interrupts
-        currentState = STATE_IDLE;
+        // non-blocking GPS processing
+        currentState = stopwatchRunning ? STATE_RUNNING : STATE_IDLE;
         break;
 
-    case STATE_SD_WRITE: {
-        const char *buf = gpsGetReadyBuffer();
-        if (buf) {
-            char formattedBuffer[2048];
-            gpsFormatBuffer(formattedBuffer, sizeof(formattedBuffer), buf);
+    case STATE_SD_WRITE:
+        if (stopwatchRunning) {
+            const char *buf = gpsGetReadyBuffer();
+            if (buf) {
+                char formattedBuffer[2048];
+                gpsFormatBuffer(formattedBuffer, sizeof(formattedBuffer), buf);
 
-            FRESULT res = f_open(&fil, "write.txt", FA_OPEN_ALWAYS | FA_WRITE);
-            if (res == FR_OK) {
-                f_lseek(&fil, fil.fsize);
-                f_puts(formattedBuffer, &fil);
-                f_close(&fil);
-                gpsMarkBufferWritten();
-            } else {
-                currentState = STATE_ERROR;
+                FRESULT res = f_open(&fil, "write.txt", FA_OPEN_ALWAYS | FA_WRITE);
+                if (res == FR_OK) {
+                    f_lseek(&fil, fil.fsize);
+                    f_puts(formattedBuffer, &fil);
+                    f_close(&fil);
+                    gpsMarkBufferWritten();
+                } else {
+                    currentState = STATE_ERROR;
+                }
             }
         }
-        currentState = STATE_IDLE;
+        currentState = stopwatchRunning ? STATE_RUNNING : STATE_IDLE;
         break;
-    }
-
 
     case STATE_ERROR:
-        // SD or sensor error handling
         HAL_Delay(500);
         break;
     }
 }
+

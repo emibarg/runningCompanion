@@ -24,6 +24,8 @@ Core/Src/system_state.o: ../Core/Src/system_state.c \
  ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_i2c.h \
  ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_pwr.h \
  ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_spi.h \
+ ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim.h \
+ ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim_ex.h \
  ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h \
  ../Core/Inc/gps.h ../Core/Inc/mpu6050.h ../FATFS/App/fatfs.h \
  ../Middlewares/Third_Party/FatFs/src/ff.h \
@@ -31,7 +33,7 @@ Core/Src/system_state.o: ../Core/Src/system_state.c \
  ../Core/Inc/main.h ../Middlewares/Third_Party/FatFs/src/ff_gen_drv.h \
  ../Middlewares/Third_Party/FatFs/src/diskio.h \
  ../Middlewares/Third_Party/FatFs/src/ff.h ../FATFS/Target/user_diskio.h \
- ../Core/Inc/st7735.h ../Core/Inc/fonts.h
+ ../Core/Inc/st7735.h ../Core/Inc/fonts.h ../Core/Inc/tim.h
 ../Core/Inc/system_state.h:
 ../Core/Inc/main.h:
 ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h:
@@ -58,6 +60,8 @@ Core/Src/system_state.o: ../Core/Src/system_state.c \
 ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_i2c.h:
 ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_pwr.h:
 ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_spi.h:
+../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim.h:
+../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim_ex.h:
 ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h:
 ../Core/Inc/gps.h:
 ../Core/Inc/mpu6050.h:
@@ -72,3 +76,4 @@ Core/Src/system_state.o: ../Core/Src/system_state.c \
 ../FATFS/Target/user_diskio.h:
 ../Core/Inc/st7735.h:
 ../Core/Inc/fonts.h:
+../Core/Inc/tim.h:

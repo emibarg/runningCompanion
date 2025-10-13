@@ -6,5 +6,8 @@
 ../Core/Src/mpu6050.c:111:6:MPU6050_Get6AxisRawData	32	static
 ../Core/Src/mpu6050.c:127:6:MPU6050_Get_LSB_Sensitivity	16	static
 ../Core/Src/mpu6050.c:162:6:MPU6050_DataConvert	16	static
-../Core/Src/mpu6050.c:177:5:MPU6050_DataReady	8	static
-../Core/Src/mpu6050.c:202:6:MPU6050_ProcessData	16	static
+../Core/Src/mpu6050.c:177:5:MPU6050_DataReady	16	static
+../Core/Src/mpu6050.c:185:6:MPU6050_ProcessData	16	static
+../Core/Src/mpu6050.c:207:6:StepDetector_Update	192	static
+../Core/Src/mpu6050.c:236:10:StepDetector_GetCount	4	static
+../Core/Src/mpu6050.c:241:6:StepDetector_Reset	4	static
