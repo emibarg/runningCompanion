@@ -60,6 +60,10 @@ static void saveToActiveBuffer(const char *line) {
 /**
  * Process incoming GPS bytes (works exactly as before).
  */
+static char lastUtcTime[16] = "--:--:--";
+static char lastUtcDate[16] = "----/--/--";
+static bool gpsValidFix = false;
+
 void gpsProcessByte(uint8_t byte) {
     if (byte != '\n' && nmeaIndex < GPS_LINE_MAX - 1) {
         nmeaBuffer[nmeaIndex++] = byte;
@@ -67,20 +71,73 @@ void gpsProcessByte(uint8_t byte) {
         nmeaBuffer[nmeaIndex] = '\0';
         nmeaIndex = 0;
 
-        if (gpsValidate(nmeaBuffer) && !strncmp(nmeaBuffer, "$GPGGA", 6)) {
+        if (!gpsValidate(nmeaBuffer))
+            return;
+
+        // === Handle GPGGA ===
+        if (!strncmp(nmeaBuffer, "$GPGGA", 6)) {
             gpsReady = true;
             uint32_t now = HAL_GetTick();
             if (now - lastSaveTime >= 5000) {
                 saveToActiveBuffer(nmeaBuffer);
                 lastSaveTime = now;
             }
+
+            // Extract UTC time (hhmmss)
+            char utc[16];
+            if (sscanf(nmeaBuffer, "$GPGGA,%[^,],", utc) == 1 && strlen(utc) >= 6) {
+                snprintf(lastUtcTime, sizeof(lastUtcTime),
+                         "%c%c:%c%c:%c%c",
+                         utc[0], utc[1], utc[2], utc[3], utc[4], utc[5]);
+            }
         }
+
+        // === Handle GPRMC (contains both time + date) ===
+        if (!strncmp(nmeaBuffer, "$GPRMC", 6)) {
+            char utc[16], status, date[16];
+            if (sscanf(nmeaBuffer,
+                       "$GPRMC,%[^,],%c,%*[^,],%*[^,],%*[^,],%*[^,],%*[^,],%*[^,],%[^,]",
+                       utc, &status, date) == 3) {
+
+                if (status == 'A') {  // Active fix
+                    gpsValidFix = true;
+
+                    if (strlen(utc) >= 6) {
+                        snprintf(lastUtcTime, sizeof(lastUtcTime),
+                                 "%c%c:%c%c:%c%c",
+                                 utc[0], utc[1], utc[2], utc[3], utc[4], utc[5]);
+                    }
+
+                    if (strlen(date) == 6) {
+                        snprintf(lastUtcDate, sizeof(lastUtcDate),
+                                 "20%c%c-%c%c-%c%c",
+                                 date[4], date[5], date[2], date[3], date[0], date[1]);
+                    }
+                } else {
+                    gpsValidFix = false; // no fix
+                }
+            }
+    }
     }
 }
+
 
 /**
  * API for system_state.c
  */
+
+bool gpsHasValidFix(void) {
+        return gpsValidFix;
+    }
+
+
+const char* gpsGetLastDate(void) {
+    return lastUtcDate;
+}
+
+const char* gpsGetLastTime(void) {
+    return lastUtcTime;
+}
 int gpsIsBufferFull(void) {
     return bufferFull;
 }
@@ -279,6 +336,22 @@ void gpsFormatBuffer(char *outBuffer, size_t outSize, const char *input) {
             }
         }
         lineStart = lineEnd + 1;
+    }
+}
+
+
+
+/**
+ * Force the active buffer to become the ready buffer,
+ * even if it's not full.
+ */
+void gpsForceReadyBuffer(void) {
+    if (writeIndex > 0) {
+        readyBuffer = activeBuffer;
+        activeBuffer = (activeBuffer == gpsBufferA) ? gpsBufferB : gpsBufferA;
+        memset(activeBuffer, 0, GPS_BUFFER_SIZE);
+        writeIndex = 0;
+        bufferFull = 1;
     }
 }
 

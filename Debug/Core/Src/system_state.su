@@ -1,4 +1,4 @@
 ../Core/Src/system_state.c:30:6:HAL_TIM_PeriodElapsedCallback	16	static
 ../Core/Src/system_state.c:47:6:checkButton	16	static
-../Core/Src/system_state.c:60:6:systemState_Init	24	static
-../Core/Src/system_state.c:104:6:systemState_Run	2112	static
+../Core/Src/system_state.c:60:6:systemState_Init	88	static
+../Core/Src/system_state.c:108:6:systemState_Run	2136	static

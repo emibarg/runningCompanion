@@ -18,5 +18,10 @@ int gpsIsBufferFull(void);
 void gpsClearBuffer(void);
 void nmeaToDecimalDegreesString(const char* nmea, char dir, char* outStr);
 void gpsFormatBuffer(char *outBuffer, size_t outSize, const char *input);
+void gpsForceReadyBuffer(void);
+const char* gpsGetLastDate(void);
+const char* gpsGetLastTime(void);
+bool gpsHasValidFix(void);
+
 
 #endif

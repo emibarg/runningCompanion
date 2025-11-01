@@ -73,7 +73,7 @@ static uint8_t SD_ReadyWait(void)
 	uint8_t res;
 
 	/* timeout 500ms */
-	Timer2 = 500;
+	Timer2 = 5000;
 
 	/* if SD goes ready, receives 0xFF */
 	do {

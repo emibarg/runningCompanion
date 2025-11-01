@@ -81,6 +81,10 @@ void systemState_Init(void) {
     // Start GPS interrupt reception
     HAL_UART_Receive_IT(&huart1, &rxByte, 1);
 
+    const char enableGGA_RMC_VTG[] = "$PMTK314,0,1,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0*28\r\n";
+    HAL_UART_Transmit(&huart1, (uint8_t*)enableGGA_RMC_VTG, strlen(enableGGA_RMC_VTG), HAL_MAX_DELAY);
+
+
     //BOOT SCREEN
     ST7735_FillScreen(ST7735_BLACK);
     ST7735_WriteString(0, 0, "RUNNING", Font_11x18, ST7735_WHITE, ST7735_BLACK);
@@ -111,16 +115,57 @@ void systemState_Run(void) {
             // STOP: stop timer, go to idle
             HAL_TIM_Base_Stop_IT(&htim4);
             stopwatchRunning = false;
+
+            // Write remaining GPS data
+            gpsForceReadyBuffer();
+            if (gpsHasReadyBuffer()) {
+                currentState = STATE_SD_WRITE;
+            }
+
+            // --- WRITE SUMMARY TO FILE ---
+            FRESULT res = f_open(&fil, "write.txt", FA_OPEN_ALWAYS | FA_WRITE);
+            if (res == FR_OK) {
+                f_lseek(&fil, fil.fsize);
+
+                uint32_t s = stopwatchSec % 60;
+                uint32_t m = (stopwatchSec / 60) % 60;
+                uint32_t h = stopwatchSec / 3600;
+
+                char summary[128];
+                snprintf(summary, sizeof(summary),
+                         "Session: %02lu:%02lu:%02lu, Steps: %lu\r\n\r\n",
+                         h, m, s, StepDetector_GetCount());
+
+                f_puts(summary, &fil);
+                f_close(&fil);
+            }
+
+            StepDetector_Reset();
             currentState = STATE_IDLE;
 
             // show ready screen
             ST7735_FillScreenFast(ST7735_BLACK);
             ST7735_WriteString(0, 0, "Ready?", Font_11x18, ST7735_COLOR565(255, 0, 0), ST7735_BLACK);
-        } else {
+        }
+ else {
             // START: reset timer and start
             stopwatchSec = 0;
             HAL_TIM_Base_Start_IT(&htim4);
             stopwatchRunning = true;
+            FRESULT res = f_open(&fil, "write.txt", FA_OPEN_ALWAYS | FA_WRITE);
+            if (res == FR_OK) {
+                f_lseek(&fil, fil.fsize);
+                const char *date = gpsGetLastDate();
+                const char *time = gpsGetLastTime();
+
+                char header[128];
+                snprintf(header, sizeof(header),
+                         "\r\n==== New Session ====\r\nDate: %s\r\nTime: %s\r\n=====================\r\n",
+                         date, time);
+
+                f_puts(header, &fil);
+                f_close(&fil);
+            }
             currentState = STATE_RUNNING;
         }
     }
@@ -135,7 +180,7 @@ void systemState_Run(void) {
             ST7735_WriteString(0, 50 + 15, "MPU: OK", Font_11x18, ST7735_WHITE, ST7735_BLACK);
         }
 
-        if (gpsIsReady() && !gpsOK) {
+        if (gpsIsReady() && !gpsOK && gpsHasValidFix()) {
             gpsOK = true;
             ST7735_FillRectangle(0, 30 + 15, 11 * 8, 18, ST7735_BLACK);
             ST7735_WriteString(0, 30 + 15, "GPS: OK", Font_11x18, ST7735_WHITE, ST7735_BLACK);
@@ -173,11 +218,11 @@ void systemState_Run(void) {
 
         // sensor reads
         if (HAL_GetTick() - lastActionTime >= 10) {
-            if (MPU6050_DataReady()) {
-                currentState = STATE_MPU_READ;
-            } else if (gpsHasReadyBuffer()) {
+            if (gpsHasReadyBuffer()) {
                 currentState = STATE_SD_WRITE;
-            } else {
+            } else if (MPU6050_DataReady()) {
+                            currentState = STATE_MPU_READ;
+                        }else {
                 currentState = STATE_GPS_PROCESS;
             }
             lastActionTime = HAL_GetTick();
