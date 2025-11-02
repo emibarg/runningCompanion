@@ -2,6 +2,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdlib.h>
+
 
 static char gpsBufferA[GPS_BUFFER_SIZE];
 static char gpsBufferB[GPS_BUFFER_SIZE];
@@ -63,6 +65,7 @@ static void saveToActiveBuffer(const char *line) {
 static char lastUtcTime[16] = "--:--:--";
 static char lastUtcDate[16] = "----/--/--";
 static bool gpsValidFix = false;
+static char lastVelocity[16] = "0.00"; // in km/h
 
 void gpsProcessByte(uint8_t byte) {
     if (byte != '\n' && nmeaIndex < GPS_LINE_MAX - 1) {
@@ -83,48 +86,89 @@ void gpsProcessByte(uint8_t byte) {
                 lastSaveTime = now;
             }
 
-            // Extract UTC time (hhmmss)
             char utc[16];
             if (sscanf(nmeaBuffer, "$GPGGA,%[^,],", utc) == 1 && strlen(utc) >= 6) {
-                snprintf(lastUtcTime, sizeof(lastUtcTime),
-                         "%c%c:%c%c:%c%c",
-                         utc[0], utc[1], utc[2], utc[3], utc[4], utc[5]);
+                char local[16];
+                gpsConvertUtcToLocal(utc, local, -3); // convert to Argentina time
+                snprintf(lastUtcTime, sizeof(lastUtcTime), "%s", local);
             }
         }
 
-        // === Handle GPRMC (contains both time + date) ===
-        if (!strncmp(nmeaBuffer, "$GPRMC", 6)) {
-            char utc[16], status, date[16];
+        // === Handle GPRMC (time + date + fix status) ===
+        else if (!strncmp(nmeaBuffer, "$GPRMC", 6)) {
+            char utc[16] = {0};
+            char status = 0;
+            char date[16] = {0};
+
+            // $GPRMC,<UTC>,<status>,<lat>,<N/S>,<lon>,<E/W>,<speed_knots>,<track>,<date>,...
+            int fields = sscanf(
+                nmeaBuffer,
+                "$GPRMC,%[^,],%c,%*[^,],%*[^,],%*[^,],%*[^,],%*[^,],%*[^,],%[^,]",
+                utc, &status, date
+            );
+
+            if (fields == 3 && status == 'A') {  // Active fix
+                gpsValidFix = true;
+
+                if (strlen(utc) >= 6) {
+                    char local[16];
+                    gpsConvertUtcToLocal(utc, local, -3); // local time conversion
+                    snprintf(lastUtcTime, sizeof(lastUtcTime), "%s", local);
+                }
+
+                if (strlen(date) == 6) {
+                    snprintf(lastUtcDate, sizeof(lastUtcDate),
+                             "20%c%c-%c%c-%c%c",
+                             date[4], date[5], date[2], date[3], date[0], date[1]);
+                }
+            } else {
+                gpsValidFix = false;
+            }
+        }
+
+        // === Handle GPVTG (velocity) ===
+        else if (!strncmp(nmeaBuffer, "$GPVTG", 6)) {
+            char speedKph[16];
             if (sscanf(nmeaBuffer,
-                       "$GPRMC,%[^,],%c,%*[^,],%*[^,],%*[^,],%*[^,],%*[^,],%*[^,],%[^,]",
-                       utc, &status, date) == 3) {
-
-                if (status == 'A') {  // Active fix
-                    gpsValidFix = true;
-
-                    if (strlen(utc) >= 6) {
-                        snprintf(lastUtcTime, sizeof(lastUtcTime),
-                                 "%c%c:%c%c:%c%c",
-                                 utc[0], utc[1], utc[2], utc[3], utc[4], utc[5]);
-                    }
-
-                    if (strlen(date) == 6) {
-                        snprintf(lastUtcDate, sizeof(lastUtcDate),
-                                 "20%c%c-%c%c-%c%c",
-                                 date[4], date[5], date[2], date[3], date[0], date[1]);
-                    }
-                } else {
-                    gpsValidFix = false; // no fix
+                       "$GPVTG,%*[^,],%*[^,],%*[^,],%*[^,],%*[^,],%*[^,],%[^,]",
+                       speedKph) == 1) {
+                if (strlen(speedKph) > 0) {
+                    snprintf(lastVelocity, sizeof(lastVelocity), "%s", speedKph);
                 }
             }
+        }
     }
+}
+
+void gpsConvertUtcToLocal(const char* utc, char* outLocal, int offsetHours) {
+    if (!utc || strlen(utc) < 6) {
+        strcpy(outLocal, "00:00:00");
+        return;
     }
+
+    int h = (utc[0] - '0') * 10 + (utc[1] - '0');
+    int m = (utc[2] - '0') * 10 + (utc[3] - '0');
+    int s = (utc[4] - '0') * 10 + (utc[5] - '0');
+
+    // apply timezone offset
+    h += offsetHours;
+
+    // wrap around if needed
+    if (h < 0) h += 24;
+    if (h >= 24) h -= 24;
+
+    snprintf(outLocal, 16, "%02d:%02d:%02d", h, m, s);
 }
 
 
 /**
  * API for system_state.c
  */
+
+
+const char* gpsGetLastVelocity(void) {
+    return lastVelocity;
+}
 
 bool gpsHasValidFix(void) {
         return gpsValidFix;
@@ -247,7 +291,6 @@ void nmeaToDecimalDegreesString(const char* nmea, char dir, char* outStr) {
     // format into string with decimal point before last 5 digits
     // e.g. decimalDegX100000 = -3098150 -> "-30.98150"
     long v = decimalDegX100000;
-    char tmp[32];
     // store absolute value digits in tmpSignless
     if (v < 0) v = -v;
     // write digits into a signless buffer
@@ -327,8 +370,9 @@ void gpsFormatBuffer(char *outBuffer, size_t outSize, const char *input) {
                         strcpy(formattedUtc, "00:00:00");
 
                     // Append formatted line
-                    int written = snprintf(outBuffer + pos, outSize - pos, "%s,%s,%s\r\n",
-                                           formattedUtc, latStr, lonStr);
+                    int written = snprintf(outBuffer + pos, outSize - pos, "%s,%s,%s,%s\r\n",
+                                           formattedUtc, latStr, lonStr, lastVelocity);
+
                     if (written < 0 || (size_t)written >= outSize - pos)
                         break; // Prevent overflow
                     pos += written;

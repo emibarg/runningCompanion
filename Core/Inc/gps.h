@@ -22,6 +22,8 @@ void gpsForceReadyBuffer(void);
 const char* gpsGetLastDate(void);
 const char* gpsGetLastTime(void);
 bool gpsHasValidFix(void);
+const char* gpsGetLastVelocity(void);
+void gpsConvertUtcToLocal(const char* utc, char* outLocal, int offsetHours);
 
 
 #endif
