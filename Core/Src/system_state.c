@@ -147,7 +147,7 @@ void systemState_Run(void) {
             ST7735_FillScreenFast(ST7735_BLACK);
             ST7735_WriteString(0, 0, "Ready?", Font_11x18, ST7735_COLOR565(255, 0, 0), ST7735_BLACK);
         }
- else {
+ else  if (!stopwatchRunning && currentState == STATE_IDLE ){
             // START: reset timer and start
             stopwatchSec = 0;
             HAL_TIM_Base_Start_IT(&htim4);

@@ -128,15 +128,22 @@ void gpsProcessByte(uint8_t byte) {
 
         // === Handle GPVTG (velocity) ===
         else if (!strncmp(nmeaBuffer, "$GPVTG", 6)) {
-            char speedKph[16];
+            char speedKph[16] = {0};
+
             if (sscanf(nmeaBuffer,
-                       "$GPVTG,%*[^,],%*[^,],%*[^,],%*[^,],%*[^,],%*[^,],%[^,]",
-                       speedKph) == 1) {
+                       "$GPVTG,%*[^,],%*[^,],%*[^,],%*[^,],%*[^,],%*[^,],%15[^,]",
+                       speedKph) == 1 ||
+                sscanf(nmeaBuffer,
+                       "$GPVTG,,T,,M,%*[^,],N,%15[^,],",
+                       speedKph) == 1) // fallback for missing fields
+            {
                 if (strlen(speedKph) > 0) {
                     snprintf(lastVelocity, sizeof(lastVelocity), "%s", speedKph);
                 }
             }
         }
+
+
     }
 }
 

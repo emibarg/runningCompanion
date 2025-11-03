@@ -16,7 +16,7 @@ from kivy_garden.mapview import MapView, MapMarkerPopup, MapLayer
 def parse_log_data(file_path):
     """Parse log file into sessions with coordinates."""
     sessions = []
-    current = None
+    current = {"date": None, "time": None, "coords": [], "summary": None}
     
     try:
         with open(file_path, "r", encoding="utf-8") as fh:
@@ -26,52 +26,51 @@ def parse_log_data(file_path):
                     continue
 
                 if line.startswith("==== New Session ===="):
-                    if current:
+                    # Append current session if it has coordinates
+                    if current["coords"]:
                         sessions.append(current)
+                    # Start a new session
                     current = {"date": None, "time": None, "coords": [], "summary": None}
                     
                 elif line.startswith("Date:"):
-                    if current is None:
-                        current = {"date": None, "time": None, "coords": [], "summary": None}
                     current["date"] = line.replace("Date:", "").strip()
                     
                 elif line.startswith("Time:"):
-                    if current is None:
-                        current = {"date": None, "time": None, "coords": [], "summary": None}
                     current["time"] = line.replace("Time:", "").strip()
                     
                 elif line.startswith("Session:"):
-                    if current is None:
-                        current = {"date": None, "time": None, "coords": [], "summary": None}
                     current["summary"] = line
                     
                 else:
                     # Parse coordinate lines: 22:39:09,-31.45759,-64.16764, 2.0
+                    # Also handle format without speed: 22:39:09,-31.45759,-64.16764
                     parts = [p.strip() for p in line.split(",")]
-                    if len(parts) == 4:
+                    if len(parts) >= 3:  # At least timestamp, lat, lon
                         try:
                             timestamp = parts[0]
                             lat = float(parts[1])
                             lon = float(parts[2])
-                            speed = float(parts[3])
-                            if current is None:
-                                current = {"date": None, "time": None, "coords": [], "summary": None}
+                            speed = float(parts[3]) if len(parts) >= 4 else 0.0
                             current["coords"].append({
                                 "lat": lat,
                                 "lon": lon,
                                 "speed": speed,
                                 "timestamp": timestamp
                             })
-                        except ValueError:
+                        except (ValueError, IndexError):
                             pass
 
-            if current:
+            # Append the last session if it has coordinates
+            if current["coords"]:
                 sessions.append(current)
 
     except Exception as e:
         print(f"Error parsing file: {e}")
 
     print(f"Parsed {len(sessions)} sessions")
+    for i, s in enumerate(sessions):
+        print(f"Session {i+1}: {len(s['coords'])} coordinates, Date: {s.get('date', 'N/A')}")
+    
     return sessions
 
 
@@ -81,6 +80,7 @@ class RouteLayer(MapLayer):
     def __init__(self, coords, **kwargs):
         super().__init__(**kwargs)
         self.coords = coords
+        print(f"RouteLayer created with {len(coords)} coordinates")
 
     def reposition(self):
         mapview = self.parent
@@ -96,10 +96,13 @@ class RouteLayer(MapLayer):
                     zoom=mapview.zoom
                 )
                 points.extend([x, y])
-            except:
+            except Exception as e:
+                print(f"Error converting coordinate: {e}")
                 pass
 
         self.canvas.clear()
+        print(f"RouteLayer: Generated {len(points)//2} points from {len(self.coords)} coords")
+        
         if len(points) >= 4:
             with self.canvas:
                 # Draw shadow/outline
@@ -108,6 +111,9 @@ class RouteLayer(MapLayer):
                 # Draw main line
                 Color(0.2, 0.6, 1.0, 0.9)  # Nice blue color
                 Line(points=points, width=4, cap='round', joint='round')
+            print(f"RouteLayer: Drew line with {len(points)//2} points")
+        else:
+            print(f"RouteLayer: Not enough points to draw line ({len(points)//2} points)")
 
 
 class CoordinateDotsLayer(MapLayer):
