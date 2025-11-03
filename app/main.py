@@ -1,11 +1,10 @@
-# main.py
 import os
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, Screen, FadeTransition
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
-from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
+from kivy.graphics import Color, Line, Rectangle, RoundedRectangle, Ellipse
 from kivy.core.window import Window
 from kivy.clock import Clock
 from kivy.utils import get_color_from_hex
@@ -109,6 +108,129 @@ class RouteLayer(MapLayer):
                 # Draw main line
                 Color(0.2, 0.6, 1.0, 0.9)  # Nice blue color
                 Line(points=points, width=4, cap='round', joint='round')
+
+
+class CoordinateDotsLayer(MapLayer):
+    """Draws dots for intermediate coordinates."""
+    
+    def __init__(self, coords, **kwargs):
+        super().__init__(**kwargs)
+        self.coords = coords
+
+    def reposition(self):
+        mapview = self.parent
+        if not self.coords or mapview is None:
+            return
+
+        self.canvas.clear()
+        
+        # Draw dots for intermediate coordinates (skip first and last)
+        for i, c in enumerate(self.coords):
+            if i == 0 or i == len(self.coords) - 1:
+                continue  # Skip start and finish
+                
+            try:
+                x, y = mapview.get_window_xy_from(
+                    lat=c["lat"], 
+                    lon=c["lon"], 
+                    zoom=mapview.zoom
+                )
+                
+                with self.canvas:
+                    # Outer circle (border)
+                    Color(*get_color_from_hex('#0f3460'))
+                    Ellipse(pos=(x - 6, y - 6), size=(12, 12))
+                    # Inner circle (dot)
+                    Color(*get_color_from_hex('#53d9ff'))
+                    Ellipse(pos=(x - 4, y - 4), size=(8, 8))
+            except:
+                pass
+
+
+class ClickableDot(MapMarkerPopup):
+    """Invisible marker for intermediate coordinates that shows info on click."""
+    
+    def __init__(self, coord, **kwargs):
+        super().__init__(lat=coord["lat"], lon=coord["lon"], **kwargs)
+        self.coord = coord
+        self.popup_showing = False
+        
+        # Make the marker invisible with larger clickable area
+        self.source = ''
+        self.size_hint = (None, None)
+        self.size = (30, 30)  # Larger clickable area
+        self.anchor_x = 0.5
+        self.anchor_y = 0.5
+        
+        # Set background color to transparent
+        self.color = [0, 0, 0, 0]
+        self.background_color = [0, 0, 0, 0]
+        
+    def on_press(self):
+        """Toggle popup on click."""
+        if self.popup_showing:
+            # Hide popup
+            self.clear_widgets()
+            self.popup_showing = False
+        else:
+            # Show popup
+            self.show_popup()
+            self.popup_showing = True
+    
+    def show_popup(self):
+        """Create and show popup content."""
+        # Create popup content
+        container = BoxLayout(
+            orientation="vertical",
+            size_hint=(None, None),
+            size=(110, 60),
+            padding=[5, 5]
+        )
+        
+        # Background with rounded corners
+        with container.canvas.before:
+            Color(*get_color_from_hex('#16213e'))
+            bg = RoundedRectangle(pos=container.pos, size=container.size, radius=[10])
+            # Border
+            Color(*get_color_from_hex('#0f3460'))
+            border = Line(rounded_rectangle=(
+                container.x, container.y, 
+                container.width, container.height, 10
+            ), width=1.5)
+        
+        def update_bg(inst, val):
+            bg.pos = inst.pos
+            bg.size = inst.size
+            border.rounded_rectangle = (inst.x, inst.y, inst.width, inst.height, 10)
+        
+        container.bind(pos=update_bg, size=update_bg)
+        
+        # Labels
+        speed_val = self.coord.get("speed", 0)
+        time_val = self.coord.get("timestamp", "?")
+        
+        speed_label = Label(
+            text=f"[color=53d9ff][b]{speed_val:.1f}[/b][/color] km/h",
+            markup=True,
+            color=(1, 1, 1, 1),
+            font_size="12sp",
+            size_hint_y=0.5
+        )
+        
+        time_label = Label(
+            text=f"{time_val}",
+            markup=True,
+            color=get_color_from_hex('#e94560'),
+            font_size="10sp",
+            size_hint_y=0.5
+        )
+        
+        container.add_widget(speed_label)
+        container.add_widget(time_label)
+        
+        # Clear previous popup content and add new
+        self.clear_widgets()
+        self.add_widget(container)
 
 
 class DragDropScreen(Screen):
@@ -367,28 +489,38 @@ class MapScreen(Screen):
         header.add_widget(session_info)
         header.add_widget(back_btn)
 
-        # Create map with dark mode overlay
+        # Create map
         map_view = MapView(zoom=15)
-        
-
-        
-
         
         Clock.schedule_once(
             lambda dt: map_view.center_on(coords[0]["lat"], coords[0]["lon"]), 
             0.1
         )
 
-        # Add route
+        # Add route line
         route_layer = RouteLayer(coords)
         map_view.add_layer(route_layer)
         
-        # Force initial draw of the route
+        # Add dots layer for intermediate coordinates
+        dots_layer = CoordinateDotsLayer(coords)
+        map_view.add_layer(dots_layer)
+        
+        # Force initial draw
         Clock.schedule_once(lambda dt: route_layer.reposition(), 0.2)
+        Clock.schedule_once(lambda dt: dots_layer.reposition(), 0.2)
 
-        # Add markers
-        for coord in coords:
-            self.create_marker(map_view, coord)
+        # Add clickable invisible markers for intermediate coordinates
+        for i, coord in enumerate(coords):
+            if i == 0:
+                # Start marker
+                self.create_start_marker(map_view, coord)
+            elif i == len(coords) - 1:
+                # Finish marker
+                self.create_finish_marker(map_view, coord)
+            else:
+                # Clickable dot (invisible marker)
+                clickable_dot = ClickableDot(coord)
+                map_view.add_marker(clickable_dot)
 
         main_layout.add_widget(header)
         main_layout.add_widget(map_view)
@@ -398,28 +530,25 @@ class MapScreen(Screen):
         self.header_bg.pos = instance.pos
         self.header_bg.size = instance.size
     
-    def create_marker(self, map_view, coord):
-        """Create a single marker with speed and time info."""
+    def create_start_marker(self, map_view, coord):
+        """Create START marker."""
         marker = MapMarkerPopup(lat=coord["lat"], lon=coord["lon"])
         
-        # Container
         container = BoxLayout(
             orientation="vertical",
             size_hint=(None, None),
-            size=(110, 60),
+            size=(120, 80),
             padding=[5, 5]
         )
         
-        # Background with rounded corners
         with container.canvas.before:
             Color(*get_color_from_hex('#16213e'))
             bg = RoundedRectangle(pos=container.pos, size=container.size, radius=[10])
-            # Border
-            Color(*get_color_from_hex('#0f3460'))
+            Color(*get_color_from_hex('#00ff00'))
             border = Line(rounded_rectangle=(
                 container.x, container.y, 
                 container.width, container.height, 10
-            ), width=1.5)
+            ), width=2)
         
         def update_bg(inst, val):
             bg.pos = inst.pos
@@ -428,7 +557,14 @@ class MapScreen(Screen):
         
         container.bind(pos=update_bg, size=update_bg)
         
-        # Labels
+        start_label = Label(
+            text="[color=00ff00][b]START[/b][/color]",
+            markup=True,
+            color=(1, 1, 1, 1),
+            font_size="14sp",
+            size_hint_y=0.4
+        )
+        
         speed_val = coord.get("speed", 0)
         time_val = coord.get("timestamp", "?")
         
@@ -436,8 +572,8 @@ class MapScreen(Screen):
             text=f"[color=53d9ff][b]{speed_val:.1f}[/b][/color] km/h",
             markup=True,
             color=(1, 1, 1, 1),
-            font_size="12sp",
-            size_hint_y=0.5
+            font_size="11sp",
+            size_hint_y=0.3
         )
         
         time_label = Label(
@@ -445,9 +581,70 @@ class MapScreen(Screen):
             markup=True,
             color=get_color_from_hex('#e94560'),
             font_size="10sp",
-            size_hint_y=0.5
+            size_hint_y=0.3
         )
         
+        container.add_widget(start_label)
+        container.add_widget(speed_label)
+        container.add_widget(time_label)
+        marker.add_widget(container)
+        map_view.add_marker(marker)
+    
+    def create_finish_marker(self, map_view, coord):
+        """Create FINISH marker."""
+        marker = MapMarkerPopup(lat=coord["lat"], lon=coord["lon"])
+        
+        container = BoxLayout(
+            orientation="vertical",
+            size_hint=(None, None),
+            size=(120, 80),
+            padding=[5, 5]
+        )
+        
+        with container.canvas.before:
+            Color(*get_color_from_hex('#16213e'))
+            bg = RoundedRectangle(pos=container.pos, size=container.size, radius=[10])
+            Color(*get_color_from_hex('#ff0000'))
+            border = Line(rounded_rectangle=(
+                container.x, container.y, 
+                container.width, container.height, 10
+            ), width=2)
+        
+        def update_bg(inst, val):
+            bg.pos = inst.pos
+            bg.size = inst.size
+            border.rounded_rectangle = (inst.x, inst.y, inst.width, inst.height, 10)
+        
+        container.bind(pos=update_bg, size=update_bg)
+        
+        finish_label = Label(
+            text="[color=ff0000][b]FINISH[/b][/color]",
+            markup=True,
+            color=(1, 1, 1, 1),
+            font_size="14sp",
+            size_hint_y=0.4
+        )
+        
+        speed_val = coord.get("speed", 0)
+        time_val = coord.get("timestamp", "?")
+        
+        speed_label = Label(
+            text=f"[color=53d9ff][b]{speed_val:.1f}[/b][/color] km/h",
+            markup=True,
+            color=(1, 1, 1, 1),
+            font_size="11sp",
+            size_hint_y=0.3
+        )
+        
+        time_label = Label(
+            text=f"{time_val}",
+            markup=True,
+            color=get_color_from_hex('#e94560'),
+            font_size="10sp",
+            size_hint_y=0.3
+        )
+        
+        container.add_widget(finish_label)
         container.add_widget(speed_label)
         container.add_widget(time_label)
         marker.add_widget(container)
@@ -471,6 +668,3 @@ class LogMapApp(App):
 
 if __name__ == "__main__":
     LogMapApp().run()
-
-
-
