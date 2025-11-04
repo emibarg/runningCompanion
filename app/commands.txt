@@ -1,0 +1,11 @@
+ Commands to execute before running app
+ 
+ 1. pushd /Applications/Kivy.app/Contents/Resources/venv/bin
+
+ 2. source activate 
+
+ 3. source kivy_activate
+
+ 4. popd   
+ 
+ 5. python main.py 
